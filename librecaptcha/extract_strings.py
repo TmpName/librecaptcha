@@ -14,17 +14,11 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
-
-from resources.lib.pyjsparser import parse
+from resources.lib.librecaptcha import pyparsing
 import requests
 
 import json
 import os
-import os.path
-import sys
-
-SHOW_WARNINGS = False
-
 
 def make_parser_raw():
     return Parser()
@@ -44,12 +38,8 @@ def make_parser_silent():
 
 
 make_parser = make_parser_silent
-if SHOW_WARNINGS:
-    make_parser = make_parser_raw
-
 
 def load_javascript(url, user_agent):
-    print("Downloading <{}>...".format(url), file=sys.stderr)
     r = requests.get(url, headers={
         "User-Agent": user_agent,
     })
@@ -57,8 +47,7 @@ def load_javascript(url, user_agent):
 
 
 def extract_strings(javascript):
-    print("Extracting strings...", file=sys.stderr)
-    parsed = parse(javascript)
+    parsed = pyparsing.nestedExpr().parseString(javascript)
     strings = []
 
     def add_strings(tree, found):
@@ -89,6 +78,5 @@ def extract_and_save(url, path, version, rc_version, user_agent):
         js = load_javascript(url, user_agent)
         strings = extract_strings(js)
         strings_json = json.dumps(strings)
-        print('Saving strings to "{}"...'.format(path), file=sys.stderr)
         f.write(strings_json)
     return strings
