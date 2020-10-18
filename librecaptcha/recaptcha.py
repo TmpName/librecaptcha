@@ -14,7 +14,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
-
+from resources.lib.comaddon import VSlog
 from .errors import UserError
 from .extract_strings import extract_and_save
 
@@ -32,10 +32,11 @@ import os.path
 import re
 import sys
 import time
+import xbmcvfs
 
 BASE_URL = "https://www.google.com/recaptcha/api2/"
 API_JS_URL = "https://www.google.com/recaptcha/api.js"
-JS_URL_TEMPLATE = "https://www.gstatic.com/recaptcha/api2/{}/recaptcha__en.js"
+JS_URL_TEMPLATE = "https://www.gstatic.com/recaptcha/releases/{}/recaptcha__en.js"
 
 STRINGS_VERSION = "0.1.0"
 STRINGS_PATH = os.path.join(
@@ -122,12 +123,12 @@ def get_js_strings(user_agent, rc_version):
         JS_URL_TEMPLATE.format(rc_version), STRINGS_PATH, STRINGS_VERSION,
         rc_version, user_agent,
     )
-    print(file=sys.stderr)
+    self.debug(file=sys.stderr)
     return result
 
 
 def get_rc_version(user_agent):
-    match = re.search(r"/recaptcha/api2/(.+?)/", requests.get(
+    match = re.search(r"/recaptcha/releases/(.+?)/", requests.get(
         API_JS_URL, headers={
             "User-Agent": user_agent,
         },
@@ -135,10 +136,6 @@ def get_rc_version(user_agent):
     if match is None:
         raise RuntimeError("Could not extract version from api.js.")
     return match.group(1)
-
-
-def get_image(data):
-    return Image.open(io.BytesIO(data))
 
 
 class Solver:
@@ -202,10 +199,10 @@ class DynamicSolver(Solver, HasGrid):
         return duration
 
     def first_payload(self):
-        image = get_image(self.rc.get("payload", api=False, params={
+        image = self.rc.get("payload", api=False, params={
             "c": self.rc.current_token,
             "k": self.rc.api_key,
-        }).content)
+        }).url
         self.on_initial_image(image)
 
     def select_tile(self, index):
@@ -216,8 +213,8 @@ class DynamicSolver(Solver, HasGrid):
         Thread(target=target, daemon=True).start()
 
     def replace_tile(self, index):
-        real_index = self.tile_index_map[index]
-        self.selections.append(real_index)
+        real_index = self.tile_index_map[int(index)]
+        self.selections.append(int(real_index))
         r = self.rc.post("replaceimage", data={
             "c": self.rc.current_token,
             "ds": "[{}]".format(real_index),
@@ -231,11 +228,11 @@ class DynamicSolver(Solver, HasGrid):
         self.rc.current_token = data[1]
         replacement_id = data[2][0]
 
-        image = get_image(self.rc.get("payload", api=False, params={
+        image = self.rc.get("payload", api=False, params={
             "c": self.rc.current_token,
             "k": self.rc.api_key,
             "id": replacement_id,
-        }).content)
+        }).url
         return image
 
 
@@ -271,10 +268,10 @@ class MultiCaptchaSolver(Solver, HasGrid):
         self.on_solved(self.selection_groups)
 
     def first_payload(self):
-        image = get_image(self.rc.get("payload", api=False, params={
+        image = self.rc.get("payload", api=False, params={
             "c": self.rc.current_token,
             "k": self.rc.api_key,
-        }).content)
+        }).url
         self.on_image(image)
 
     def replace_image(self):
@@ -293,11 +290,11 @@ class MultiCaptchaSolver(Solver, HasGrid):
         self.id = replacement_id
         self.next_challenge()
 
-        image = get_image(self.rc.get("payload", api=False, params={
+        image = self.rc.get("payload", api=False, params={
             "c": self.previous_token,
             "k": self.rc.api_key,
             "id": self.previous_id,
-        }).content)
+        }).url
         self.on_image(image)
 
 
@@ -316,6 +313,7 @@ class ReCaptcha:
         self.js_strings = None
         self.rc_version = None
         if make_requests:
+            self.debug("Making requests...")
             self.rc_version = get_rc_version(self.user_agent)
             self.js_strings = get_js_strings(self.user_agent, self.rc_version)
 
@@ -349,7 +347,7 @@ class ReCaptcha:
 
     def debug(self, *args, **kwargs):
         if self._debug:
-            print(*args, file=sys.stderr, **kwargs)
+            VSlog(*args)
 
     def find_challenge_goal(self, id, raw=False):
         start = 0
