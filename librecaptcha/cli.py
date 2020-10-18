@@ -14,101 +14,25 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
+import base64
+import os
+import re
+import xbmcaddon
+import xbmcvfs
+
+from resources.lib.comaddon import progress, dialog, xbmc, xbmcgui, VSlog
 
 from .errors import UserError
 from .frontend import Frontend
-from PIL import ImageDraw, ImageFont
 
 from threading import Thread, RLock
 from queue import Queue
-import io
 import json
 import os
-import subprocess
 import sys
 import time
 
-
-def get_font(size):
-    typefaces = [
-        "FreeSans", "LiberationSans-Regular", "DejaVuSans", "Arial", "arial",
-    ]
-    for typeface in typefaces:
-        try:
-            return ImageFont.truetype(typeface, size=size)
-        except OSError:
-            pass
-    return ImageFont.load_default()
-
-
-FONT_SIZE = 16
-FONT = get_font(FONT_SIZE)
-
-
-def read_indices(prompt, max_index):
-    while True:
-        print(prompt, end="", flush=True)
-        line = input()
-        try:
-            indices = [int(i) - 1 for i in line.split()]
-        except ValueError:
-            print("Invalid input.")
-            continue
-        if all(0 <= i < max_index for i in indices):
-            return indices
-        print("Numbers out of bounds.")
-
-
-def draw_lines(image, rows, columns):
-    draw = ImageDraw.Draw(image)
-
-    def line(p1, p2):
-        draw.line([p1, p2], fill=(255, 255, 255), width=2)
-
-    for i in range(1, rows):
-        y = image.height * i // rows - 1
-        line((0, y), (image.width, y))
-
-    for i in range(1, columns):
-        x = image.width * i // columns - 1
-        line((x, 0), (x, image.height))
-
-
-def draw_indices(image, rows, columns):
-    draw = ImageDraw.Draw(image, "RGBA")
-    for i in range(rows * columns):
-        row = i // columns
-        column = i % columns
-        corner = (
-            image.width * column // columns,
-            image.height * (row + 1) // rows,
-        )
-        text_loc = (
-            corner[0] + round(FONT_SIZE / 2),
-            corner[1] - round(FONT_SIZE * 1.5),
-        )
-
-        text = str(i + 1)
-        text_size = FONT.getsize(text)
-        draw.rectangle([
-            (text_loc[0] - round(FONT_SIZE / 10), text_loc[1]), (
-                text_loc[0] + text_size[0] + round(FONT_SIZE / 10),
-                text_loc[1] + text_size[1] + round(FONT_SIZE / 10),
-            ),
-        ], fill=(0, 0, 0, 128))
-        draw.text(text_loc, str(i + 1), fill=(255, 255, 255), font=FONT)
-
-
-def print_temporary(string, file=sys.stdout):
-    end = "" if file.isatty() else "\n"
-    print(string, file=file, end=end, flush=True)
-
-
-def clear_temporary(file=sys.stdout):
-    if not file.isatty():
-        return
-    print("\r\x1b[K", file=file, end="", flush=True)
-
+Objectif = ""
 
 class CliSolver:
     def __init__(self, solver):
@@ -116,41 +40,13 @@ class CliSolver:
         self.__image_procs = []
         self.__has_display = (os.name == "posix")
 
-    def __run_display(self, img_bytes):
-        return subprocess.Popen(
-            ["display", "-"], stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-
-    def __try_display(self, image):
-        if not self.__has_display:
-            return False
-        img_buffer = io.BytesIO()
-        image.save(img_buffer, "png")
-        img_bytes = img_buffer.getvalue()
-
-        try:
-            proc = self.__run_display(img_bytes)
-        except FileNotFoundError:
-            self.__has_display = False
-            return False
-        proc.stdin.write(img_bytes)
-        proc.stdin.close()
-        self.__image_procs.append(proc)
-        return True
-
     def show_image(self, image):
-        if not self.__try_display(image):
-            image.show()
-
-    def hide_images(self):
-        for proc in self.__image_procs:
-            proc.terminate()
-        self.__image_procs.clear()
+        oSolver = cInputWindow(captcha=image, msg= Objectif, roundnum=1)
+        retArg = oSolver.get()
+        return retArg
 
     def run(self):
         self.solver.run()
-
 
 class CliDynamicSolver(CliSolver):
     def __init__(self, solver):
@@ -164,38 +60,22 @@ class CliDynamicSolver(CliSolver):
 
     def handle_initial_image(self, image, **kwargs):
         solver = self.solver
-        num_rows, num_columns = solver.dimensions
-        draw_indices(image, num_rows, num_columns)
-        self.show_image(image)
-
-        print("Take a look at the grid of tiles that just appeared. ", end="")
-        print("({} rows, {} columns)".format(num_rows, num_columns))
-        print("Which tiles should be selected?")
-        print("(Top-left is 1; bottom-right is {}.)".format(solver.num_tiles))
-        indices = read_indices(
-            "Enter numbers separated by spaces: ", solver.num_tiles,
-        )
-        print()
-        self.hide_images()
+        indices = self.show_image(image)
         self.select_initial(indices)
         self.new_tile_loop()
         solver.finish()
 
+    def show_imageNewTile(self, image):
+        oSolver = cInputWindowYesNo(captcha=image, msg="Est-ce que cette image est en lien avec le thème ?", roundnum=1)
+        retArg = oSolver.get()
+        return retArg
+
     def new_tile_loop(self):
         while self.num_pending > 0:
-            print_temporary("Waiting for next image...")
             index, image = self.image_queue.get()
-            clear_temporary()
             self.num_pending -= 1
-            self.show_image(image)
+            accept = self.show_imageNewTile(image)[:1].lower() == "y"
 
-            print("Take a look at the image that just appeared.")
-            accept = input(
-                "Should this image be selected? [y/N] ",
-            )[:1].lower() == "y"
-            print()
-
-            self.hide_images()
             if accept:
                 self.select_tile(index)
 
@@ -227,22 +107,8 @@ class CliMultiCaptchaSolver(CliSolver):
 
     def handle_image(self, image, **kwargs):
         solver = self.solver
-        num_rows, num_columns = solver.dimensions
-        draw_lines(image, num_rows, num_columns)
-        draw_indices(image, num_rows, num_columns)
-        self.show_image(image)
-
-        print("Take a look at the grid of tiles that just appeared. ", end="")
-        print("({} rows, {} columns)".format(num_rows, num_columns))
-        print("Which tiles should be selected?")
-        print("(Top-left is 1; bottom-right is {}.)".format(solver.num_tiles))
-        indices = read_indices(
-            "Enter numbers separated by spaces: ", solver.num_tiles,
-        )
-        print()
-        self.hide_images()
+        indices = self.show_image(image)
         solver.select_indices(indices)
-
 
 BLOCKED_MSG = """\
 ERROR: Received challenge type "{}".
@@ -272,15 +138,13 @@ class Cli(Frontend):
 
     def handle_goal(self, goal, meta, **kwargs):
         if goal:
-            print("CHALLENGE OBJECTIVE: {}".format(goal))
             return
-        print("WARNING: Could not determine challenge objective.")
-        print("Challenge information: {}".format(json.dumps(meta)))
+        global Objectif
+        Objectif = json.dumps(meta).split(',')[6]
 
     def handle_challenge(self, ctype, **kwargs):
         if not self._first:
-            print("You must solve another challenge.")
-            print()
+            VSlog("You must solve another challenge.")
         self._first = False
 
     def challenge_dynamic(self, solver, **kwargs):
@@ -297,7 +161,6 @@ class Cli(Frontend):
 
     @classmethod
     def raise_challenge_blocked(cls, ctype):
-        print(BLOCKED_MSG.format(ctype), end="")
         raise UserError(
             "Error: Unsupported challenge type: {}.\n".format(ctype) +
             "Requests are most likely being blocked; see the message above.",
@@ -309,3 +172,198 @@ class Cli(Frontend):
             "Error: Got unsupported challenge type: {}\n".format(ctype) +
             "Please file an issue if this problem persists.",
         )
+
+class cInputWindow(xbmcgui.WindowDialog):
+    def __init__(self, *args, **kwargs):
+        self.cptloc = kwargs.get('captcha')
+
+        bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
+        check_image = 'special://home/addons/plugin.video.vstream/resources/art/trans_checked.png'
+
+        self.ctrlBackground = xbmcgui.ControlImage(0, 0, 1280, 720, bg_image)
+        self.cancelled = False
+        self.addControl (self.ctrlBackground)
+
+        self.strActionInfo = xbmcgui.ControlLabel(250, 20, 724, 400, 'Le thème est : ' + kwargs.get('msg'), 'font40', '0xFFFF00FF')
+        self.addControl(self.strActionInfo)
+
+        self.img = xbmcgui.ControlImage(250, 110, 780, 499, str(self.cptloc))
+        self.addControl(self.img)
+
+        self.chk = [0]*9
+        self.chkbutton = [0]*9
+        self.chkstate = [False]*9
+
+        if 1 == 2:
+            self.chk[0] = xbmcgui.ControlCheckMark(250, 110, 260, 166, '1', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[1] = xbmcgui.ControlCheckMark(250 + 260, 110, 260, 166, '2', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[2] = xbmcgui.ControlCheckMark(250 + 520, 110, 260, 166, '3', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+
+            self.chk[3] = xbmcgui.ControlCheckMark(250, 110 + 166, 260, 166, '4', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[4] = xbmcgui.ControlCheckMark(250 + 260, 110 + 166, 260, 166, '5', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[5] = xbmcgui.ControlCheckMark(250 + 520, 110 + 166, 260, 166, '6', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+
+            self.chk[6] = xbmcgui.ControlCheckMark(250, 110 + 332, 260, 166, '7', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[7] = xbmcgui.ControlCheckMark(250 + 260, 110 + 332, 260, 166, '8', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[8] = xbmcgui.ControlCheckMark(250 + 520, 110 + 332, 260, 166, '9', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+
+        else:
+            self.chk[0] = xbmcgui.ControlImage(250, 110, 260, 166, check_image)
+            self.chk[1] = xbmcgui.ControlImage(250 + 260, 110, 260, 166, check_image)
+            self.chk[2] = xbmcgui.ControlImage(250 + 520, 110, 260, 166, check_image)
+
+            self.chk[3] = xbmcgui.ControlImage(250, 110 + 166, 260, 166, check_image)
+            self.chk[4] = xbmcgui.ControlImage(250 + 260, 110 + 166, 260, 166, check_image)
+            self.chk[5] = xbmcgui.ControlImage(250 + 520, 110 + 166, 260, 166, check_image)
+
+            self.chk[6] = xbmcgui.ControlImage(250, 110 + 332, 260, 166, check_image)
+            self.chk[7] = xbmcgui.ControlImage(250 + 260, 110 + 332, 260, 166, check_image)
+            self.chk[8] = xbmcgui.ControlImage(250 + 520, 110 + 332, 260, 166, check_image)
+
+            self.chkbutton[0] = xbmcgui.ControlButton(250, 110, 260, 166, '1', font='font1')
+            self.chkbutton[1] = xbmcgui.ControlButton(250 + 260, 110, 260, 166, '2', font='font1')
+            self.chkbutton[2] = xbmcgui.ControlButton(250 + 520, 110, 260, 166, '3', font='font1')
+
+            self.chkbutton[3] = xbmcgui.ControlButton(250, 110 + 166, 260, 166, '4', font='font1')
+            self.chkbutton[4] = xbmcgui.ControlButton(250 + 260, 110 + 166, 260, 166, '5', font='font1')
+            self.chkbutton[5] = xbmcgui.ControlButton(250 + 520, 110 + 166, 260, 166, '6', font='font1')
+
+            self.chkbutton[6] = xbmcgui.ControlButton(250, 110 + 332, 260, 166, '7', font='font1')
+            self.chkbutton[7] = xbmcgui.ControlButton(250 + 260, 110 + 332, 260, 166, '8', font='font1')
+            self.chkbutton[8] = xbmcgui.ControlButton(250 + 520, 110 + 332, 260, 166, '9', font='font1')
+
+        for obj in self.chk:
+            self.addControl(obj)
+            obj.setVisible(False)
+        for obj in self.chkbutton:
+            self.addControl(obj)
+
+        self.cancelbutton = xbmcgui.ControlButton(250 + 260 - 70, 620, 140, 50, 'Cancel', alignment=2)
+        self.okbutton = xbmcgui.ControlButton(250 + 520 - 50, 620, 100, 50, 'OK', alignment=2)
+        self.addControl(self.okbutton)
+        self.addControl(self.cancelbutton)
+
+        self.chkbutton[6].controlDown(self.cancelbutton);  self.chkbutton[6].controlUp(self.chkbutton[3])
+        self.chkbutton[7].controlDown(self.cancelbutton);  self.chkbutton[7].controlUp(self.chkbutton[4])
+        self.chkbutton[8].controlDown(self.okbutton);      self.chkbutton[8].controlUp(self.chkbutton[5])
+
+        self.chkbutton[6].controlLeft(self.chkbutton[8]);  self.chkbutton[6].controlRight(self.chkbutton[7]);
+        self.chkbutton[7].controlLeft(self.chkbutton[6]);  self.chkbutton[7].controlRight(self.chkbutton[8]);
+        self.chkbutton[8].controlLeft(self.chkbutton[7]);  self.chkbutton[8].controlRight(self.chkbutton[6]);
+
+        self.chkbutton[3].controlDown(self.chkbutton[6]);  self.chkbutton[3].controlUp(self.chkbutton[0])
+        self.chkbutton[4].controlDown(self.chkbutton[7]);  self.chkbutton[4].controlUp(self.chkbutton[1])
+        self.chkbutton[5].controlDown(self.chkbutton[8]);  self.chkbutton[5].controlUp(self.chkbutton[2])
+
+        self.chkbutton[3].controlLeft(self.chkbutton[5]);  self.chkbutton[3].controlRight(self.chkbutton[4]);
+        self.chkbutton[4].controlLeft(self.chkbutton[3]);  self.chkbutton[4].controlRight(self.chkbutton[5]);
+        self.chkbutton[5].controlLeft(self.chkbutton[4]);  self.chkbutton[5].controlRight(self.chkbutton[3]);
+
+        self.chkbutton[0].controlDown(self.chkbutton[3]);  self.chkbutton[0].controlUp(self.cancelbutton)
+        self.chkbutton[1].controlDown(self.chkbutton[4]);  self.chkbutton[1].controlUp(self.cancelbutton)
+        self.chkbutton[2].controlDown(self.chkbutton[5]);  self.chkbutton[2].controlUp(self.okbutton)
+
+        self.chkbutton[0].controlLeft(self.chkbutton[2]);  self.chkbutton[0].controlRight(self.chkbutton[1]);
+        self.chkbutton[1].controlLeft(self.chkbutton[0]);  self.chkbutton[1].controlRight(self.chkbutton[2]);
+        self.chkbutton[2].controlLeft(self.chkbutton[1]);  self.chkbutton[2].controlRight(self.chkbutton[0]);
+
+        self.cancelled = False
+        self.setFocus(self.okbutton)
+        self.okbutton.controlLeft(self.cancelbutton);      self.okbutton.controlRight(self.cancelbutton);
+        self.cancelbutton.controlLeft(self.okbutton);      self.cancelbutton.controlRight(self.okbutton);
+        self.okbutton.controlDown(self.chkbutton[2]);      self.okbutton.controlUp(self.chkbutton[8]);
+        self.cancelbutton.controlDown(self.chkbutton[0]);  self.cancelbutton.controlUp(self.chkbutton[6]);
+
+    def get(self):
+        self.doModal()
+        self.close()
+        if not self.cancelled:
+            retval = []
+            for objn in range(9):
+                if self.chkstate[objn]:
+                    retval.append(int(objn))
+            return retval
+
+        else:
+            return ""
+
+    def anythingChecked(self):
+        for obj in self.chkstate:
+            if obj:
+                return True
+        return False
+
+    def onControl(self, control):
+        if str(control.getLabel()) == "OK":
+            if self.anythingChecked():
+                self.close()
+        elif str(control.getLabel()) == "Cancel":
+            self.cancelled = True
+            self.close()
+        try:
+            if 'xbmcgui.ControlButton' in repr(type(control)):
+                index = control.getLabel()
+                if index.isnumeric():
+                    self.chkstate[int(index)-1] = not self.chkstate[int(index)-1]
+                    self.chk[int(index)-1].setVisible(self.chkstate[int(index)-1])
+
+        except:
+            pass
+
+    def onAction(self, action):
+        if action == 10:
+            self.cancelled = True
+            self.close()
+
+class cInputWindowYesNo(xbmcgui.WindowDialog):
+    def __init__(self, *args, **kwargs):
+        self.cptloc = kwargs.get('captcha')
+
+        bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
+
+        self.ctrlBackground = xbmcgui.ControlImage(0, 0, 1280, 720, bg_image)
+        self.cancelled = False
+        self.addControl (self.ctrlBackground)
+
+        self.strActionInfo = xbmcgui.ControlLabel(250, 20, 724, 400, kwargs.get('msg'), 'font40', '0xFFFF00FF')
+        self.addControl(self.strActionInfo)
+
+        self.img = xbmcgui.ControlImage(250, 110, 500, 300, str(self.cptloc))
+        self.addControl(self.img)
+
+        self.Yesbutton = xbmcgui.ControlButton(250 + 520 - 50, 620, 100, 50, 'Yes', alignment=2)
+        self.Nobutton = xbmcgui.ControlButton(250 + 260 - 70, 620, 140, 50, 'No', alignment=2)
+        self.addControl(self.Yesbutton)
+        self.addControl(self.Nobutton)
+
+        self.setFocus(self.Yesbutton)
+        self.Yesbutton.controlLeft(self.Nobutton);      self.Nobutton.controlRight(self.Yesbutton);
+
+    def get(self):
+        self.doModal()
+        self.close()
+        retval = self.chkstate
+        return retval
+
+    def anythingChecked(self):
+        for obj in self.chkstate:
+            if obj:
+                return True
+        return False
+
+    def onControl(self, control):
+        try:
+            index = control.getLabel()
+            if "Yes" in index:
+                self.chkstate = "Y"
+                self.chk = "Y"
+            else:
+                self.chkstate = "N"
+                self.chk = "N"
+        except:
+            pass
+
+        if str(control.getLabel()) == "Yes":
+            self.close()
+        elif str(control.getLabel()) == "No":
+            self.close()
