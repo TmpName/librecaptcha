@@ -43,7 +43,10 @@ class CliSolver:
     def show_image(self, image):
         oSolver = cInputWindow(captcha=image, msg= Objectif, roundnum=1)
         retArg = oSolver.get()
-        return retArg
+        if retArg == False:
+            return False
+        else:
+            return retArg
 
     def run(self):
         self.solver.run()
@@ -61,6 +64,8 @@ class CliDynamicSolver(CliSolver):
     def handle_initial_image(self, image, **kwargs):
         solver = self.solver
         indices = self.show_image(image)
+        if indices == False:
+            return False
         self.select_initial(indices)
         self.new_tile_loop()
         solver.finish()
@@ -75,7 +80,6 @@ class CliDynamicSolver(CliSolver):
             index, image = self.image_queue.get()
             self.num_pending -= 1
             accept = self.show_imageNewTile(image)[:1].lower() == "y"
-
             if accept:
                 self.select_tile(index)
 
@@ -84,6 +88,10 @@ class CliDynamicSolver(CliSolver):
         self.image_queue.put((index, image))
 
     def select_initial(self, indices):
+        if indices == False:
+            solver = self.solver
+            solver.finish()
+
         for i, index in enumerate(indices):
             # Avoid sending initial requests simultaneously.
             self.select_tile(index, 0.25 * i)
@@ -108,6 +116,8 @@ class CliMultiCaptchaSolver(CliSolver):
     def handle_image(self, image, **kwargs):
         solver = self.solver
         indices = self.show_image(image)
+        if indices == False:
+            return False
         solver.select_indices(indices)
 
 BLOCKED_MSG = """\
@@ -285,7 +295,7 @@ class cInputWindow(xbmcgui.WindowDialog):
             return retval
 
         else:
-            return ""
+            return False
 
     def anythingChecked(self):
         for obj in self.chkstate:
