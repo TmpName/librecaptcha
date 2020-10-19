@@ -14,6 +14,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
+from resources.lib.comaddon import progress, VSlog  # import du dialog progress
 from .errors import UserError
 from .extract_strings import extract_and_save
 
@@ -303,7 +304,6 @@ class ReCaptcha:
         self.js_strings = None
         self.rc_version = None
         if make_requests:
-            self.debug("Making requests...")
             self.rc_version = get_rc_version(self.user_agent)
             self.js_strings = get_js_strings(self.user_agent, self.rc_version)
 
@@ -334,10 +334,6 @@ class ReCaptcha:
     def on_challenge_unknown(type: str, **kwargs):
         """Callback; set this attribute in the parent class."""
         raise NotImplementedError
-
-    def debug(self, *args, **kwargs):
-        if self._debug:
-            VSlog(*args)
 
     def find_challenge_goal(self, id, raw=False):
         start = 0
@@ -375,6 +371,8 @@ class ReCaptcha:
         headers = headers or {}
         if "User-Agent" not in headers:
             headers["User-Agent"] = self.user_agent
+        if "Accept-Language" not in headers:
+            headers["Accept-Language"] = "fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3"
         return headers
 
     def get(self, url, *, params=None, api=True, headers=None,
@@ -383,13 +381,13 @@ class ReCaptcha:
         if api:
             params["k"] = self.api_key
             params["v"] = self.rc_version
+            params["hl"] = "fr"
         headers = self.get_headers(headers)
 
         r = requests.get(
             get_full_url(url), params=params, headers=headers,
             **kwargs,
         )
-        self.debug("[http] [get] {}".format(r.url))
         if not (allow_errors is True or r.status_code in (allow_errors or {})):
             r.raise_for_status()
         return r
@@ -401,16 +399,13 @@ class ReCaptcha:
         if api:
             params["k"] = self.api_key
             data["v"] = self.rc_version
+            params["hl"] = "fr"
         headers = self.get_headers(headers)
 
         r = requests.post(
             get_full_url(url), params=params, data=data, headers=headers,
             **kwargs,
         )
-        self.debug("[http] [post] {}".format(r.url))
-        self.debug("[http] [post] [data] {!r}".format(data))
-        if not no_debug_response:
-            self.debug("[http] [post] [response] {}".format(r.text))
         if not (allow_errors is True or r.status_code in (allow_errors or {})):
             r.raise_for_status()
         return r
@@ -429,6 +424,7 @@ class ReCaptcha:
         text = self.get("anchor", params={"co": self.co}).text
         parser = Parser()
         parser.feed(text)
+        VSlog(text)
 
         if not parser.token:
             raise RuntimeError(
@@ -442,23 +438,19 @@ class ReCaptcha:
         response_text = json.dumps({"response": response}, separators=",:")
         response_b64 = rc_base64(response_text)
 
-        self.debug("Sending verify request...")
         r = self.post("userverify", data={
             "c": self.current_token,
             "response": response_b64,
         })
 
         uvresp = load_rc_json(r.text)
-        self.debug("Got verify response: {!r}".format(uvresp))
         rresp = get_rresp(uvresp)
         uvresp_token = uvresp[1]
         return (uvresp_token, rresp)
 
     def get_first_rresp(self):
-        self.debug("Getting first rresp...")
         r = self.post("reload", data={"reason": "fi", "c": self.first_token})
         rresp = load_rc_json(r.text)
-        self.debug("Got first rresp: {!r}".format(rresp))
         return rresp
 
     def handle_solved(self, response, **kwargs):
@@ -472,11 +464,8 @@ class ReCaptcha:
 
     def solve_challenge(self, rresp):
         challenge_type = rresp[5]
-        self.debug("Challenge type: {}".format(challenge_type))
         pmeta = rresp[4]
-        self.debug("pmeta: {}".format(pmeta))
         self.current_token = rresp[1]
-        self.debug("Current token: {}".format(self.current_token))
 
         solver_class = {
             "dynamic": DynamicSolver,
