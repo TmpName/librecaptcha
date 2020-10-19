@@ -1,434 +1,198 @@
-# Copyright (C) 2019 cyclopsian (https://github.com/cyclopsian)
-# Copyright (C) 2019 nickolas360 <contact@nickolas360.com>
-#
-# This file is part of librecaptcha.
-#
-# librecaptcha is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# librecaptcha is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
+import xbmcaddon
+import xbmcvfs
+import xbmcgui
 
-from .cli import Cli
-from .errors import UserExit, GtkImportError
-from .frontend import Frontend
+class cInputWindow(xbmcgui.WindowDialog):
+    def __init__(self, *args, **kwargs):
+        self.cptloc = kwargs.get('captcha')
 
-from threading import Thread, RLock
-import html
-import json
-import math
-import re
+        bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
+        check_image = 'special://home/addons/plugin.video.vstream/resources/art/trans_checked.png'
 
-try:
-    import gi
-    gi.require_version("Gtk", "3.0")
-    from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
-except ImportError as e:
-    raise GtkImportError from e
+        self.ctrlBackground = xbmcgui.ControlImage(0, 0, 1280, 720, bg_image)
+        self.cancelled = False
+        self.addControl (self.ctrlBackground)
 
-# Disable GTK warnings
-GLib.log_set_writer_func(lambda *args: GLib.LogWriterOutput.HANDLED)
+        self.strActionInfo = xbmcgui.ControlLabel(250, 20, 724, 400, 'Le thème est : ' + kwargs.get('msg'), 'font40', '0xFFFF00FF')
+        self.addControl(self.strActionInfo)
 
+        self.img = xbmcgui.ControlImage(250, 110, 780, 499, str(self.cptloc))
+        self.addControl(self.img)
 
-def image_to_gdk_pixbuf(image):
-    width, height = image.size
-    image_bytes = GLib.Bytes.new(image.tobytes())
-    has_alpha = image.mode == "RGBA"
-    bpp = 4 if has_alpha else 3
-    return GdkPixbuf.Pixbuf.new_from_bytes(
-        image_bytes, GdkPixbuf.Colorspace.RGB,
-        has_alpha, 8, width, height, width * bpp,
-    )
+        self.chk = [0]*9
+        self.chkbutton = [0]*9
+        self.chkstate = [False]*9
 
+        if 1 == 2:
+            self.chk[0] = xbmcgui.ControlCheckMark(250, 110, 260, 166, '1', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[1] = xbmcgui.ControlCheckMark(250 + 260, 110, 260, 166, '2', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[2] = xbmcgui.ControlCheckMark(250 + 520, 110, 260, 166, '3', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
 
-class ChallengeDialogWidget(Gtk.Dialog):
-    css_provider = None
+            self.chk[3] = xbmcgui.ControlCheckMark(250, 110 + 166, 260, 166, '4', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[4] = xbmcgui.ControlCheckMark(250 + 260, 110 + 166, 260, 166, '5', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[5] = xbmcgui.ControlCheckMark(250 + 520, 110 + 166, 260, 166, '6', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
 
-    def __init__(self):
-        super().__init__()
-        self.columns = 0
-        self.grid = Gtk.Grid.new()
-        self.set_title("CAPTCHA Challenge")
-        self.set_icon_name("view-refresh-symbolic")
+            self.chk[6] = xbmcgui.ControlCheckMark(250, 110 + 332, 260, 166, '7', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[7] = xbmcgui.ControlCheckMark(250 + 260, 110 + 332, 260, 166, '8', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
+            self.chk[8] = xbmcgui.ControlCheckMark(250 + 520, 110 + 332, 260, 166, '9', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
 
-        self.verify = self.add_button("", Gtk.ResponseType.OK)
-        context = self.verify.get_style_context()
-        context.add_class("suggested-action")
-        self.set_resizable(False)
-
-        self.content = content = self.get_content_area()
-        content.set_spacing(6)
-        for dir in ["top", "right", "bottom", "left"]:
-            getattr(content, "set_margin_" + dir)(6)
-
-        self.header = Gtk.Label.new("")
-        self.header.set_xalign(0)
-        context = self.header.get_style_context()
-        context.add_class("challenge-header")
-        content.pack_start(self.header, False, False, 0)
-        self.load_css()
-
-    def get_goal(self, **kwargs) -> str:
-        """Callback; set this attribute in this parent class."""
-        raise NotImplementedError
-
-    def get_note(self, **kwargs) -> str:
-        """Callback; set this attribute in this parent class."""
-        raise NotImplementedError
-
-    def get_verify_label(self, **kwargs) -> str:
-        """Callback; set this attribute in this parent class."""
-        raise NotImplementedError
-
-    def make_grid_item(self, index, pixbuf, **kwargs) -> object:
-        """Callback; set this attribute in this parent class."""
-        raise NotImplementedError
-
-    @property
-    def formatted_goal(self):
-        raw = str(self.get_goal())
-        match = re.fullmatch(r"(.*)<strong>(.*)</strong>(.*)", raw)
-        if not match:
-            return html.escape(raw)
-        groups = match.groups()
-        return '{}<span size="xx-large">{}</span>{}'.format(
-            *map(html.escape, [
-                groups[0] and groups[0] + "\n",
-                groups[1],
-                groups[2],
-            ]),
-        )
-
-    @classmethod
-    def load_css(cls):
-        if cls.css_provider is not None:
-            return
-        cls.css_provider = Gtk.CssProvider.new()
-        cls.css_provider.load_from_data("""
-            .challenge-button {
-                border-radius: 0;
-                border-width: 1px;
-                padding: 0;
-            }
-            .challenge-check, .challenge-header {
-                color: @theme_selected_fg_color;
-                background-image: linear-gradient(
-                    @theme_selected_bg_color, @theme_selected_bg_color);
-            }
-            .challenge-header {
-                padding: 12px;
-            }
-            .challenge-check {
-                border-radius: 50%;
-            }
-        """.encode("utf8"))
-        Gtk.StyleContext.add_provider_for_screen(
-            Gdk.Screen.get_default(), cls.css_provider,
-            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
-        )
-
-    def load_initial(self, image, *, rows, columns):
-        self.columns = columns
-        pixbuf = image_to_gdk_pixbuf(image)
-        stride_x = image.width // columns
-        stride_y = image.height // rows
-        for i in range(rows * columns):
-            column = i % columns
-            row = i // columns
-            cell_pixbuf = GdkPixbuf.Pixbuf.new(
-                GdkPixbuf.Colorspace.RGB, pixbuf.get_has_alpha(),
-                8, stride_x, stride_y,
-            )
-            src_x = stride_x * column
-            src_y = stride_y * row
-            pixbuf.copy_area(
-                src_x, src_y, stride_x, stride_y, cell_pixbuf, 0, 0,
-            )
-            widget = self.make_grid_item(i, cell_pixbuf)
-            context = widget.get_style_context()
-            context.add_class("challenge-button")
-            self.grid.attach(widget, column, row, 1, 1)
-        self.content.pack_start(self.grid, True, True, 0)
-
-    def get_grid_item(self, i):
-        column = i % self.columns
-        row = i // self.columns
-        return self.grid.get_child_at(column, row)
-
-    def replace_grid_item(self, i, new):
-        column = i % self.columns
-        row = i // self.columns
-        old = self.grid.get_child_at(column, row)
-        self.grid.remove(old)
-        self.grid.attach(new, column, row, 1, 1)
-        new.show_all()
-
-    def update(self):
-        goal = self.formatted_goal
-        note = str(self.get_note())
-        verify_label = str(self.get_verify_label())
-        markup = goal + "\n"
-        self.header.set_markup(markup + note)
-        self.verify.set_label(verify_label)
-
-    def run(self):
-        self.show_all()
-        response = super().run()
-        self.destroy()
-        while Gtk.events_pending():
-            Gtk.main_iteration()
-        if response != Gtk.ResponseType.OK:
-            raise UserExit
-
-
-class ChallengeToggleButton(Gtk.ToggleButton):
-    def __init__(self, pixbuf):
-        super().__init__()
-        self.pixbuf = pixbuf
-        width = pixbuf.get_width()
-        height = pixbuf.get_height()
-        self.small_pixbuf = pixbuf.scale_simple(
-            width * 0.9, height * 0.9, GdkPixbuf.InterpType.BILINEAR,
-        )
-        self.set_relief(Gtk.ReliefStyle.NONE)
-        fixed = Gtk.Fixed.new()
-        self.image = Gtk.Image.new_from_pixbuf(pixbuf)
-        self.image.set_size_request(width, height)
-        self.check = Gtk.Image.new_from_icon_name(
-            "object-select-symbolic", Gtk.IconSize.DND,
-        )
-        self.check.set_pixel_size(24)
-        self.check.set_no_show_all(True)
-        context = self.check.get_style_context()
-        context.add_class("challenge-check")
-        fixed.put(self.image, 0, 0)
-        fixed.put(self.check, 0, 0)
-        self.add(fixed)
-        self.connect("toggled", lambda obj: self.toggle_check())
-
-    def toggle_check(self):
-        if self.get_active():
-            self.check.show()
-            self.image.set_from_pixbuf(self.small_pixbuf)
-            return
-        self.check.hide()
-        self.image.set_from_pixbuf(self.pixbuf)
-
-
-class BaseCaptchaDialog:
-    def __init__(self):
-        self.dialog = dialog = ChallengeDialogWidget()
-        dialog.get_goal = self.__get_goal
-
-    def __get_goal(self, **kwargs):
-        return self.get_goal(**kwargs)
-
-    def get_goal(self, **kwargs) -> str:
-        """Callback; set this attribute in this parent class."""
-        raise NotImplementedError
-
-    def load_initial(self, image, *, rows, columns):
-        self.dialog.load_initial(image, rows=rows, columns=columns)
-        self.update()
-
-    def update(self):
-        self.dialog.update()
-
-    def run(self):
-        self.dialog.run()
-
-
-class DynamicDialog(BaseCaptchaDialog):
-    def __init__(self):
-        super().__init__()
-        dialog = self.dialog
-        dialog.get_note = self.get_note
-        dialog.get_verify_label = self.get_verify_label
-        dialog.make_grid_item = self.make_grid_item
-
-    def on_clicked(self, index, **kwargs):
-        """Callback; set this attribute in the parent class."""
-        raise NotImplementedError
-
-    def get_note(self, **kwargs):
-        return "Click verify once there are none left"
-
-    def get_verify_label(self, **kwargs):
-        return "Ver_ify"
-
-    def make_grid_item(self, index, pixbuf, **kwargs):
-        button = Gtk.Button.new()
-        image = Gtk.Image.new_from_pixbuf(pixbuf)
-        button.add(image)
-        button.connect("clicked", lambda obj: self.handle_clicked(obj, index))
-        context = button.get_style_context()
-        context.add_class("challenge-button")
-        return button
-
-    def handle_clicked(self, button, index, **kwargs):
-        spinner = Gtk.Spinner.new()
-        spinner.set_size_request(32, 32)
-        left = (button.get_allocated_width() - 32) / 2
-        top = (button.get_allocated_height() - 32) / 2
-        spinner.set_margin_top(math.floor(top))
-        spinner.set_margin_left(math.floor(left))
-        spinner.set_margin_bottom(math.ceil(top))
-        spinner.set_margin_right(math.ceil(left))
-        self.dialog.replace_grid_item(index, spinner)
-        spinner.start()
-        self.on_clicked(index)
-
-    def replace_tile_image(self, index, image):
-        pixbuf = image_to_gdk_pixbuf(image)
-        spinner = self.dialog.get_grid_item(index)
-        if pixbuf is None:
-            spinner.stop()
-            return
-        button = self.make_grid_item(index, pixbuf)
-        self.dialog.replace_grid_item(index, button)
-
-
-class MultiCaptchaDialog(BaseCaptchaDialog):
-    def __init__(self):
-        super().__init__()
-        self.selected = set()
-        dialog = self.dialog
-        dialog.get_note = self.get_note
-        dialog.get_verify_label = self.get_verify_label
-        dialog.make_grid_item = self.make_grid_item
-
-    def get_note(self, **kwargs):
-        note = "If there are none, click skip"
-        if self.selected:
-            note = '<span alpha="30%">{}</span>'.format(note)
-        return note
-
-    def get_verify_label(self, **kwargs):
-        if self.selected:
-            return "Ver_ify"
-        return "Sk_ip"
-
-    def make_grid_item(self, index, pixbuf, **kwargs):
-        button = ChallengeToggleButton(pixbuf)
-        button.connect(
-            "toggled", lambda obj: self.handle_toggled(obj, index),
-        )
-        return button
-
-    def handle_toggled(self, button, index, **kwargs):
-        if button.get_active():
-            self.selected.add(index)
         else:
-            self.selected.remove(index)
-        self.update()
+            self.chk[0] = xbmcgui.ControlImage(250, 110, 260, 166, check_image)
+            self.chk[1] = xbmcgui.ControlImage(250 + 260, 110, 260, 166, check_image)
+            self.chk[2] = xbmcgui.ControlImage(250 + 520, 110, 260, 166, check_image)
 
-    def run(self):
-        super().run()
-        return list(self.selected)
+            self.chk[3] = xbmcgui.ControlImage(250, 110 + 166, 260, 166, check_image)
+            self.chk[4] = xbmcgui.ControlImage(250 + 260, 110 + 166, 260, 166, check_image)
+            self.chk[5] = xbmcgui.ControlImage(250 + 520, 110 + 166, 260, 166, check_image)
 
+            self.chk[6] = xbmcgui.ControlImage(250, 110 + 332, 260, 166, check_image)
+            self.chk[7] = xbmcgui.ControlImage(250 + 260, 110 + 332, 260, 166, check_image)
+            self.chk[8] = xbmcgui.ControlImage(250 + 520, 110 + 332, 260, 166, check_image)
 
-class GuiSolver:
-    def __init__(self, solver, gui: "Gui"):
-        self.solver = solver
-        self.gui: "Gui" = gui
-        self.dialog = None
+            self.chkbutton[0] = xbmcgui.ControlButton(250, 110, 260, 166, '1', font='font1')
+            self.chkbutton[1] = xbmcgui.ControlButton(250 + 260, 110, 260, 166, '2', font='font1')
+            self.chkbutton[2] = xbmcgui.ControlButton(250 + 520, 110, 260, 166, '3', font='font1')
 
-    def get_goal(self, **kwargs):
-        return self.gui.goal
+            self.chkbutton[3] = xbmcgui.ControlButton(250, 110 + 166, 260, 166, '4', font='font1')
+            self.chkbutton[4] = xbmcgui.ControlButton(250 + 260, 110 + 166, 260, 166, '5', font='font1')
+            self.chkbutton[5] = xbmcgui.ControlButton(250 + 520, 110 + 166, 260, 166, '6', font='font1')
 
-    def prepare_dialog(self, dialog):
-        dialog.get_goal = self.get_goal
-        return dialog
+            self.chkbutton[6] = xbmcgui.ControlButton(250, 110 + 332, 260, 166, '7', font='font1')
+            self.chkbutton[7] = xbmcgui.ControlButton(250 + 260, 110 + 332, 260, 166, '8', font='font1')
+            self.chkbutton[8] = xbmcgui.ControlButton(250 + 520, 110 + 332, 260, 166, '9', font='font1')
 
-    def run(self):
-        self.solver.run()
+        for obj in self.chk:
+            self.addControl(obj)
+            obj.setVisible(False)
+        for obj in self.chkbutton:
+            self.addControl(obj)
 
+        self.cancelbutton = xbmcgui.ControlButton(250 + 260 - 70, 620, 140, 50, 'Cancel', alignment=2)
+        self.okbutton = xbmcgui.ControlButton(250 + 520 - 50, 620, 100, 50, 'OK', alignment=2)
+        self.addControl(self.okbutton)
+        self.addControl(self.cancelbutton)
 
-class GuiDynamicSolver(GuiSolver):
-    def __init__(self, solver, gui):
-        super().__init__(solver, gui)
-        solver.on_initial_image = self.handle_initial_image
-        solver.on_tile_image = self.handle_tile_image
-        self.lock = RLock()
+        self.chkbutton[6].controlDown(self.cancelbutton);  self.chkbutton[6].controlUp(self.chkbutton[3])
+        self.chkbutton[7].controlDown(self.cancelbutton);  self.chkbutton[7].controlUp(self.chkbutton[4])
+        self.chkbutton[8].controlDown(self.okbutton);      self.chkbutton[8].controlUp(self.chkbutton[5])
 
-    def handle_initial_image(self, image, **kwargs):
-        solver = self.solver
-        rows, columns = solver.dimensions
-        self.dialog = self.prepare_dialog(DynamicDialog())
-        self.dialog.on_clicked = self.handle_gui_tile_clicked
-        self.dialog.load_initial(image, rows=rows, columns=columns)
-        self.dialog.run()
-        print("Submitting solution...")
-        solver.finish()
+        self.chkbutton[6].controlLeft(self.chkbutton[8]);  self.chkbutton[6].controlRight(self.chkbutton[7]);
+        self.chkbutton[7].controlLeft(self.chkbutton[6]);  self.chkbutton[7].controlRight(self.chkbutton[8]);
+        self.chkbutton[8].controlLeft(self.chkbutton[7]);  self.chkbutton[8].controlRight(self.chkbutton[6]);
 
-    # Called from a non-UI thread.
-    def handle_tile_image(self, index, image, **kwargs):
-        def callback():
-            self.dialog.replace_tile_image(index, image)
-        GLib.timeout_add(0, callback)
+        self.chkbutton[3].controlDown(self.chkbutton[6]);  self.chkbutton[3].controlUp(self.chkbutton[0])
+        self.chkbutton[4].controlDown(self.chkbutton[7]);  self.chkbutton[4].controlUp(self.chkbutton[1])
+        self.chkbutton[5].controlDown(self.chkbutton[8]);  self.chkbutton[5].controlUp(self.chkbutton[2])
 
-    def handle_gui_tile_clicked(self, index):
-        def target():
-            with self.lock:
-                self.solver.select_tile(index)
-        Thread(target=target, daemon=True).start()
+        self.chkbutton[3].controlLeft(self.chkbutton[5]);  self.chkbutton[3].controlRight(self.chkbutton[4]);
+        self.chkbutton[4].controlLeft(self.chkbutton[3]);  self.chkbutton[4].controlRight(self.chkbutton[5]);
+        self.chkbutton[5].controlLeft(self.chkbutton[4]);  self.chkbutton[5].controlRight(self.chkbutton[3]);
 
+        self.chkbutton[0].controlDown(self.chkbutton[3]);  self.chkbutton[0].controlUp(self.cancelbutton)
+        self.chkbutton[1].controlDown(self.chkbutton[4]);  self.chkbutton[1].controlUp(self.cancelbutton)
+        self.chkbutton[2].controlDown(self.chkbutton[5]);  self.chkbutton[2].controlUp(self.okbutton)
 
-class GuiMultiCaptchaSolver(GuiSolver):
-    def __init__(self, solver, gui):
-        super().__init__(solver, gui)
-        solver.on_image = self.handle_image
+        self.chkbutton[0].controlLeft(self.chkbutton[2]);  self.chkbutton[0].controlRight(self.chkbutton[1]);
+        self.chkbutton[1].controlLeft(self.chkbutton[0]);  self.chkbutton[1].controlRight(self.chkbutton[2]);
+        self.chkbutton[2].controlLeft(self.chkbutton[1]);  self.chkbutton[2].controlRight(self.chkbutton[0]);
 
-    def handle_image(self, image, **kwargs):
-        solver = self.solver
-        rows, columns = solver.dimensions
-        self.dialog = self.prepare_dialog(MultiCaptchaDialog())
-        self.dialog.load_initial(image, rows=rows, columns=columns)
-        indices = self.dialog.run()
-        print("Submitting solution...")
-        solver.select_indices(indices)
+        self.cancelled = False
+        self.setFocus(self.okbutton)
+        self.okbutton.controlLeft(self.cancelbutton);      self.okbutton.controlRight(self.cancelbutton);
+        self.cancelbutton.controlLeft(self.okbutton);      self.cancelbutton.controlRight(self.okbutton);
+        self.okbutton.controlDown(self.chkbutton[2]);      self.okbutton.controlUp(self.chkbutton[8]);
+        self.cancelbutton.controlDown(self.chkbutton[0]);  self.cancelbutton.controlUp(self.chkbutton[6]);
 
+    def get(self):
+        self.doModal()
+        self.close()
+        if not self.cancelled:
+            retval = []
+            for objn in range(9):
+                if self.chkstate[objn]:
+                    retval.append(int(objn))
+            return retval
 
-class Gui(Frontend):
-    def __init__(self, recaptcha):
-        super().__init__(recaptcha)
-        self.goal = None
-        self._first = True
-        rc = self.rc
-        rc.on_goal = self.handle_goal
-        rc.on_challenge = self.handle_challenge
-        rc.on_challenge_dynamic = self.challenge_dynamic
-        rc.on_challenge_multicaptcha = self.challenge_multicaptcha
-        rc.on_challenge_blocked = self.challenge_blocked
-        rc.on_challenge_unknown = self.challenge_unknown
+        else:
+            return False
 
-    def handle_goal(self, goal, meta, raw, **kwargs):
-        if not raw:
-            print("WARNING: Could not determine challenge objective.")
-            raw = json.dumps(meta)
-        self.goal = raw
+    def anythingChecked(self):
+        for obj in self.chkstate:
+            if obj:
+                return True
+        return False
 
-    def handle_challenge(self, ctype, **kwargs):
-        if not self._first:
-            print("You must solve another challenge.")
-            print()
-        self._first = False
+    def onControl(self, control):
+        if str(control.getLabel()) == "OK":
+            if self.anythingChecked():
+                self.close()
+        elif str(control.getLabel()) == "Cancel":
+            self.cancelled = True
+            self.close()
+        try:
+            if 'xbmcgui.ControlButton' in repr(type(control)):
+                index = control.getLabel()
+                if index.isnumeric():
+                    self.chkstate[int(index)-1] = not self.chkstate[int(index)-1]
+                    self.chk[int(index)-1].setVisible(self.chkstate[int(index)-1])
 
-    def challenge_dynamic(self, solver, **kwargs):
-        GuiDynamicSolver(solver, self).run()
+        except:
+            pass
 
-    def challenge_multicaptcha(self, solver, **kwargs):
-        GuiMultiCaptchaSolver(solver, self).run()
+    def onAction(self, action):
+        if action == 10:
+            self.cancelled = True
+            self.close()
 
-    def challenge_blocked(self, ctype, **kwargs):
-        Cli.raise_challenge_blocked(ctype)
+class cInputWindowYesNo(xbmcgui.WindowDialog):
+    def __init__(self, *args, **kwargs):
+        self.cptloc = kwargs.get('captcha')
 
-    def challenge_unknown(self, ctype, **kwargs):
-        Cli.raise_challenge_unknown(ctype)
+        bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
+
+        self.ctrlBackground = xbmcgui.ControlImage(0, 0, 1280, 720, bg_image)
+        self.cancelled = False
+        self.addControl (self.ctrlBackground)
+
+        self.strActionInfo = xbmcgui.ControlLabel(250, 20, 724, 400, kwargs.get('msg'), 'font40', '0xFFFF00FF')
+        self.addControl(self.strActionInfo)
+
+        self.img = xbmcgui.ControlImage(250, 110, 500, 300, str(self.cptloc))
+        self.addControl(self.img)
+
+        self.Yesbutton = xbmcgui.ControlButton(250 + 520 - 50, 620, 100, 50, 'Yes', alignment=2)
+        self.Nobutton = xbmcgui.ControlButton(250 + 260 - 70, 620, 140, 50, 'No', alignment=2)
+        self.addControl(self.Yesbutton)
+        self.addControl(self.Nobutton)
+
+        self.setFocus(self.Yesbutton)
+        self.Yesbutton.controlLeft(self.Nobutton);      self.Nobutton.controlRight(self.Yesbutton);
+
+    def get(self):
+        self.doModal()
+        self.close()
+        retval = self.chkstate
+        return retval
+
+    def anythingChecked(self):
+        for obj in self.chkstate:
+            if obj:
+                return True
+        return False
+
+    def onControl(self, control):
+        try:
+            index = control.getLabel()
+            if "Yes" in index:
+                self.chkstate = "Y"
+                self.chk = "Y"
+            else:
+                self.chkstate = "N"
+                self.chk = "N"
+        except:
+            pass
+
+        if str(control.getLabel()) == "Yes":
+            self.close()
+        elif str(control.getLabel()) == "No":
+            self.close()

@@ -14,34 +14,17 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
-from resources.lib.librecaptcha import pyparsing
+from . import pyparsing
+from resources.lib.comaddon import VSlog
 import requests
 
 import json
-import os
-
-def make_parser_raw():
-    return Parser()
-
-
-def make_parser_silent():
-    # File descriptor hackiness to silence warnings
-    null_fd = os.open(os.devnull, os.O_RDWR)
-    old_fd = os.dup(2)
-    try:
-        os.dup2(null_fd, 2)
-        return make_parser_raw()
-    finally:
-        os.dup2(old_fd, 2)
-        os.close(null_fd)
-        os.close(old_fd)
-
-
-make_parser = make_parser_silent
+import xbmcvfs
 
 def load_javascript(url, user_agent):
     r = requests.get(url, headers={
         "User-Agent": user_agent,
+        "Accept-Language": "fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3",
     })
     return r.text
 
@@ -72,11 +55,10 @@ def extract_strings(javascript):
 
 
 def extract_and_save(url, path, version, rc_version, user_agent):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        print("{}/{}".format(version, rc_version), file=f)
-        js = load_javascript(url, user_agent)
-        strings = extract_strings(js)
-        strings_json = json.dumps(strings)
-        f.write(strings_json)
+    f = xbmcvfs.File(path + "/data.json", "w")
+    js = load_javascript(url, user_agent)
+    strings = extract_strings(js)
+    strings_json = json.dumps(strings)
+    f.write(strings_json)
+    f.close()
     return strings

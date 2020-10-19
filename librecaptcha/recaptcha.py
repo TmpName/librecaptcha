@@ -14,34 +14,25 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
-from resources.lib.comaddon import VSlog
 from .errors import UserError
 from .extract_strings import extract_and_save
-
-from PIL import Image
-import requests
 
 from html.parser import HTMLParser
 from threading import Thread
 from urllib.parse import urlparse
+
+import requests
 import base64
-import io
 import json
-import os
-import os.path
 import re
-import sys
 import time
-import xbmcvfs
 
 BASE_URL = "https://www.google.com/recaptcha/api2/"
 API_JS_URL = "https://www.google.com/recaptcha/api.js"
-JS_URL_TEMPLATE = "https://www.gstatic.com/recaptcha/releases/{}/recaptcha__en.js"
+JS_URL_TEMPLATE = "https://www.gstatic.com/recaptcha/releases/{}/recaptcha__fr.js"
 
 STRINGS_VERSION = "0.1.0"
-STRINGS_PATH = os.path.join(
-    os.path.expanduser("~"), ".cache", "librecaptcha", "cached-strings",
-)
+STRINGS_PATH = 'special://home/userdata/addon_data/plugin.video.vstream'
 
 DYNAMIC_SELECT_DELAY = 4.5  # seconds
 FIND_GOAL_SEARCH_DISTANCE = 10
@@ -123,7 +114,6 @@ def get_js_strings(user_agent, rc_version):
         JS_URL_TEMPLATE.format(rc_version), STRINGS_PATH, STRINGS_VERSION,
         rc_version, user_agent,
     )
-    self.debug(file=sys.stderr)
     return result
 
 
