@@ -14,7 +14,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
-from resources.lib.comaddon import VSlog
+from resources.lib.util import cUtil
 
 from .errors import UserError
 from .frontend import Frontend
@@ -23,8 +23,10 @@ from threading import Thread, RLock
 from queue import Queue
 import json
 import time
+import xbmcvfs, re
 
 Objectif = ""
+STRINGS_PATH = 'special://home/userdata/addon_data/plugin.video.vstream'
 
 class CliSolver:
     def __init__(self, solver):
@@ -140,8 +142,15 @@ class Cli(Frontend):
     def handle_goal(self, goal, meta, **kwargs):
         if goal:
             return
+
         global Objectif
         Objectif = json.dumps(meta).split(',')[6]
+        if "null" in Objectif:
+            ID = cUtil().unescape(json.dumps(meta).split(',')[0].replace('[',''))
+            f = xbmcvfs.File(STRINGS_PATH + "/data.js")
+            content = f.read()
+            f.close()
+            Objectif = re.search('case '+ID+'.+?=".+?<strong>(.+?)</strong>', content).group(1)
 
     def handle_challenge(self, ctype, **kwargs):
         if not self._first:
