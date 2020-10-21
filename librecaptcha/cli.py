@@ -144,13 +144,11 @@ class Cli(Frontend):
         if goal:
             return
         global Objectif
-        Objectif = json.dumps(meta).split(',')[6]
-        if "null" in Objectif:
-            ID = json.dumps(meta).split(',')[0].replace('[','')
-            f = xbmcvfs.File(STRINGS_PATH + "/data.js")
-            content = f.read()
-            f.close()
-            Objectif = cUtil().unescape(re.search('case '+ID+'.+?=".+?<strong>(.+?)</strong>', content).group(1))
+        ID = json.dumps(meta).split(',')[0].replace('[','')
+        f = xbmcvfs.File(STRINGS_PATH + "/data.js")
+        content = f.read()
+        f.close()
+        Objectif = cUtil().unescape(re.search('case '+ID+'.+?=".+?<strong>(.+?)</strong>', content).group(1))
 
     def handle_challenge(self, ctype, **kwargs):
         if not self._first:
