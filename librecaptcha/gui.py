@@ -2,10 +2,15 @@ import xbmcaddon
 import xbmcvfs
 import xbmcgui
 
+from resources.lib.comaddon import VSlog
+
 class cInputWindow(xbmcgui.WindowDialog):
     def __init__(self, *args, **kwargs):
         self.cptloc = kwargs.get('captcha')
-
+        
+        DimTab = kwargs.get('dimtab')
+        DimTab = [3,3]
+        
         bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
         check_image = 'special://home/addons/plugin.video.vstream/resources/art/trans_checked.png'
 
@@ -19,47 +24,20 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.img = xbmcgui.ControlImage(250, 110, 780, 499, str(self.cptloc))
         self.addControl(self.img)
 
-        self.chk = [0]*9
-        self.chkbutton = [0]*9
-        self.chkstate = [False]*9
+        self.chk = [0] * DimTab[0] * DimTab[1]
+        self.chkbutton = [0] * DimTab[0] * DimTab[1]
+        self.chkstate = [False] * DimTab[0] * DimTab[1]
+        
+        c = 0
+        cx = int(780 / DimTab[0]) #260
+        cy = int(498 / DimTab[1]) #166
+        
+        for x in range(DimTab[0]):
+            for y in range(DimTab[1]):
 
-        if 1 == 2:
-            self.chk[0] = xbmcgui.ControlCheckMark(250, 110, 260, 166, '1', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-            self.chk[1] = xbmcgui.ControlCheckMark(250 + 260, 110, 260, 166, '2', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-            self.chk[2] = xbmcgui.ControlCheckMark(250 + 520, 110, 260, 166, '3', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-
-            self.chk[3] = xbmcgui.ControlCheckMark(250, 110 + 166, 260, 166, '4', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-            self.chk[4] = xbmcgui.ControlCheckMark(250 + 260, 110 + 166, 260, 166, '5', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-            self.chk[5] = xbmcgui.ControlCheckMark(250 + 520, 110 + 166, 260, 166, '6', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-
-            self.chk[6] = xbmcgui.ControlCheckMark(250, 110 + 332, 260, 166, '7', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-            self.chk[7] = xbmcgui.ControlCheckMark(250 + 260, 110 + 332, 260, 166, '8', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-            self.chk[8] = xbmcgui.ControlCheckMark(250 + 520, 110 + 332, 260, 166, '9', font='font14', focusTexture=check_image, checkWidth=260, checkHeight=166)
-
-        else:
-            self.chk[0] = xbmcgui.ControlImage(250, 110, 260, 166, check_image)
-            self.chk[1] = xbmcgui.ControlImage(250 + 260, 110, 260, 166, check_image)
-            self.chk[2] = xbmcgui.ControlImage(250 + 520, 110, 260, 166, check_image)
-
-            self.chk[3] = xbmcgui.ControlImage(250, 110 + 166, 260, 166, check_image)
-            self.chk[4] = xbmcgui.ControlImage(250 + 260, 110 + 166, 260, 166, check_image)
-            self.chk[5] = xbmcgui.ControlImage(250 + 520, 110 + 166, 260, 166, check_image)
-
-            self.chk[6] = xbmcgui.ControlImage(250, 110 + 332, 260, 166, check_image)
-            self.chk[7] = xbmcgui.ControlImage(250 + 260, 110 + 332, 260, 166, check_image)
-            self.chk[8] = xbmcgui.ControlImage(250 + 520, 110 + 332, 260, 166, check_image)
-
-            self.chkbutton[0] = xbmcgui.ControlButton(250, 110, 260, 166, '1', font='font1')
-            self.chkbutton[1] = xbmcgui.ControlButton(250 + 260, 110, 260, 166, '2', font='font1')
-            self.chkbutton[2] = xbmcgui.ControlButton(250 + 520, 110, 260, 166, '3', font='font1')
-
-            self.chkbutton[3] = xbmcgui.ControlButton(250, 110 + 166, 260, 166, '4', font='font1')
-            self.chkbutton[4] = xbmcgui.ControlButton(250 + 260, 110 + 166, 260, 166, '5', font='font1')
-            self.chkbutton[5] = xbmcgui.ControlButton(250 + 520, 110 + 166, 260, 166, '6', font='font1')
-
-            self.chkbutton[6] = xbmcgui.ControlButton(250, 110 + 332, 260, 166, '7', font='font1')
-            self.chkbutton[7] = xbmcgui.ControlButton(250 + 260, 110 + 332, 260, 166, '8', font='font1')
-            self.chkbutton[8] = xbmcgui.ControlButton(250 + 520, 110 + 332, 260, 166, '9', font='font1')
+                self.chk[c] = xbmcgui.ControlImage(250 + cx * x, 110 + cy * y, 260, 166, check_image)
+                self.chkbutton[c] = xbmcgui.ControlButton(250 + cx * x, 110 + cy * y, 260, 166, str(c + 1), font='font1')
+                c += 1
 
         for obj in self.chk:
             self.addControl(obj)
