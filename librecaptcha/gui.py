@@ -9,7 +9,6 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.cptloc = kwargs.get('captcha')
         
         DimTab = kwargs.get('dimtab')
-        DimTab = [3,3]
         
         bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
         check_image = 'special://home/addons/plugin.video.vstream/resources/art/trans_checked.png'
@@ -32,8 +31,8 @@ class cInputWindow(xbmcgui.WindowDialog):
         cx = int(780 / DimTab[0]) #260
         cy = int(498 / DimTab[1]) #166
         
-        for x in range(DimTab[0]):
-            for y in range(DimTab[1]):
+        for y in range(DimTab[1]):
+            for x in range(DimTab[0]):
 
                 self.chk[c] = xbmcgui.ControlImage(250 + cx * x, 110 + cy * y, 260, 166, check_image)
                 self.chkbutton[c] = xbmcgui.ControlButton(250 + cx * x, 110 + cy * y, 260, 166, str(c + 1), font='font1')
