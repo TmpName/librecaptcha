@@ -27,6 +27,7 @@ import time
 import xbmcvfs, re
 
 Objectif = ""
+DimTab = []
 STRINGS_PATH = 'special://home/userdata/addon_data/plugin.video.vstream'
 
 class CliSolver:
@@ -35,7 +36,7 @@ class CliSolver:
         self.__image_procs = []
 
     def show_image(self, image):
-        oSolver = cInputWindow(captcha=image, msg= Objectif, roundnum=1)
+        oSolver = cInputWindow(captcha=image, msg= Objectif, dimtab = DimTab , roundnum=1)
         retArg = oSolver.get()
         if retArg == False:
             return False
@@ -143,12 +144,18 @@ class Cli(Frontend):
     def handle_goal(self, goal, meta, **kwargs):
         if goal:
             return
-        global Objectif
+        global Objectif, DimTab
+        
+        VSlog(meta)
+        
         ID = json.dumps(meta).split(',')[0].replace('[','')
         f = xbmcvfs.File(STRINGS_PATH + "/data.js")
         content = f.read()
         f.close()
         Objectif = cUtil().unescape(re.search('case '+ID+'.+?=".+?<strong>(.+?)</strong>', content).group(1))
+        VSlog(json.dumps(meta).split(','))
+        DimTab = [int(json.dumps(meta).split(',')[3]),int(json.dumps(meta).split(',')[4])]
+
 
     def handle_challenge(self, ctype, **kwargs):
         if not self._first:
