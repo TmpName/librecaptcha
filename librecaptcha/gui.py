@@ -9,6 +9,7 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.cptloc = kwargs.get('captcha')
         
         DimTab = kwargs.get('dimtab')
+        self.DimTabTotal = DimTab[0] * DimTab[1]
         
         bg_image = 'special://home/addons/plugin.video.vstream/resources/art/background.png'
         check_image = 'special://home/addons/plugin.video.vstream/resources/art/trans_checked.png'
@@ -23,9 +24,9 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.img = xbmcgui.ControlImage(250, 110, 780, 499, str(self.cptloc))
         self.addControl(self.img)
 
-        self.chk = [0] * DimTab[0] * DimTab[1]
-        self.chkbutton = [0] * DimTab[0] * DimTab[1]
-        self.chkstate = [False] * DimTab[0] * DimTab[1]
+        self.chk = [0] * self.DimTabTotal
+        self.chkbutton = [0] * self.DimTabTotal
+        self.chkstate = [False] * self.DimTabTotal
         
         c = 0
         cx = int(780 / DimTab[0]) #260
@@ -85,7 +86,7 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.close()
         if not self.cancelled:
             retval = []
-            for objn in range(9):
+            for objn in range(self.DimTabTotal):
                 if self.chkstate[objn]:
                     retval.append(int(objn))
             return retval
