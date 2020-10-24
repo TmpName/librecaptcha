@@ -2,9 +2,12 @@ import xbmcaddon
 import xbmcvfs
 import xbmcgui
 
-from resources.lib.comaddon import VSlog
+from resources.lib.comaddon import VSlog         
 
 class cInputWindow(xbmcgui.WindowDialog):
+
+    chkbutton = []
+
     def __init__(self, *args, **kwargs):
         self.cptloc = kwargs.get('captcha')
         
@@ -29,14 +32,17 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.chkstate = [False] * self.DimTabTotal
         
         c = 0
-        cx = int(780 / DimTab[0]) #260
-        cy = int(498 / DimTab[1]) #166
+        cx = int( (780) / DimTab[0]) #260
+        cy = int( (499) / DimTab[1]) #166
+        
+        ox = 250  #250
+        oy = 110 # 110
         
         for y in range(DimTab[1]):
             for x in range(DimTab[0]):
 
-                self.chk[c] = xbmcgui.ControlImage(250 + cx * x, 110 + cy * y, 260, 166, check_image)
-                self.chkbutton[c] = xbmcgui.ControlButton(250 + cx * x, 110 + cy * y, 260, 166, str(c + 1), font='font1')
+                self.chk[c] = xbmcgui.ControlImage(ox + cx * x, oy + cy * y, cx, cy, check_image)
+                self.chkbutton[c] = xbmcgui.ControlButton(ox + cx * x, oy + cy * y, cx, cy, str(c + 1), font='font1')
                 c += 1
 
         for obj in self.chk:
@@ -49,37 +55,49 @@ class cInputWindow(xbmcgui.WindowDialog):
         self.okbutton = xbmcgui.ControlButton(250 + 520 - 50, 620, 100, 50, 'OK', alignment=2)
         self.addControl(self.okbutton)
         self.addControl(self.cancelbutton)
-
-        self.chkbutton[6].controlDown(self.cancelbutton);  self.chkbutton[6].controlUp(self.chkbutton[3])
-        self.chkbutton[7].controlDown(self.cancelbutton);  self.chkbutton[7].controlUp(self.chkbutton[4])
-        self.chkbutton[8].controlDown(self.okbutton);      self.chkbutton[8].controlUp(self.chkbutton[5])
-
-        self.chkbutton[6].controlLeft(self.chkbutton[8]);  self.chkbutton[6].controlRight(self.chkbutton[7]);
-        self.chkbutton[7].controlLeft(self.chkbutton[6]);  self.chkbutton[7].controlRight(self.chkbutton[8]);
-        self.chkbutton[8].controlLeft(self.chkbutton[7]);  self.chkbutton[8].controlRight(self.chkbutton[6]);
-
-        self.chkbutton[3].controlDown(self.chkbutton[6]);  self.chkbutton[3].controlUp(self.chkbutton[0])
-        self.chkbutton[4].controlDown(self.chkbutton[7]);  self.chkbutton[4].controlUp(self.chkbutton[1])
-        self.chkbutton[5].controlDown(self.chkbutton[8]);  self.chkbutton[5].controlUp(self.chkbutton[2])
-
-        self.chkbutton[3].controlLeft(self.chkbutton[5]);  self.chkbutton[3].controlRight(self.chkbutton[4]);
-        self.chkbutton[4].controlLeft(self.chkbutton[3]);  self.chkbutton[4].controlRight(self.chkbutton[5]);
-        self.chkbutton[5].controlLeft(self.chkbutton[4]);  self.chkbutton[5].controlRight(self.chkbutton[3]);
-
-        self.chkbutton[0].controlDown(self.chkbutton[3]);  self.chkbutton[0].controlUp(self.cancelbutton)
-        self.chkbutton[1].controlDown(self.chkbutton[4]);  self.chkbutton[1].controlUp(self.cancelbutton)
-        self.chkbutton[2].controlDown(self.chkbutton[5]);  self.chkbutton[2].controlUp(self.okbutton)
-
-        self.chkbutton[0].controlLeft(self.chkbutton[2]);  self.chkbutton[0].controlRight(self.chkbutton[1]);
-        self.chkbutton[1].controlLeft(self.chkbutton[0]);  self.chkbutton[1].controlRight(self.chkbutton[2]);
-        self.chkbutton[2].controlLeft(self.chkbutton[1]);  self.chkbutton[2].controlRight(self.chkbutton[0]);
+        
+        for c in range(self.DimTabTotal):
+            self.chkbutton[c].controlDown(self.getbutton(c,"down",DimTab[0] , DimTab[1]))
+            self.chkbutton[c].controlUp(self.getbutton(c,"up",DimTab[0] , DimTab[1]))
+            self.chkbutton[c].controlLeft(self.getbutton(c,"left",DimTab[0] , DimTab[1]))
+            self.chkbutton[c].controlRight(self.getbutton(c,"right",DimTab[0] , DimTab[1]))
 
         self.cancelled = False
         self.setFocus(self.okbutton)
-        self.okbutton.controlLeft(self.cancelbutton);      self.okbutton.controlRight(self.cancelbutton);
-        self.cancelbutton.controlLeft(self.okbutton);      self.cancelbutton.controlRight(self.okbutton);
-        self.okbutton.controlDown(self.chkbutton[2]);      self.okbutton.controlUp(self.chkbutton[8]);
-        self.cancelbutton.controlDown(self.chkbutton[0]);  self.cancelbutton.controlUp(self.chkbutton[6]);
+        self.okbutton.controlLeft(self.cancelbutton)
+        self.okbutton.controlRight(self.cancelbutton)
+        self.cancelbutton.controlLeft(self.okbutton)
+        self.cancelbutton.controlRight(self.okbutton)
+        self.okbutton.controlDown(self.chkbutton[2])
+        self.okbutton.controlUp(self.chkbutton[8])
+        self.cancelbutton.controlDown(self.chkbutton[0])
+        self.cancelbutton.controlUp(self.chkbutton[6]);
+        
+    def getbutton(self, actuel,sens,dx,dy):
+    
+        if sens == "up":
+            if actuel < dx:
+                return self.okbutton
+            else:
+                return self.chkbutton[actuel - dx]
+                
+        if sens == "down":
+            if actuel >= dx * (dy - 1):
+                return self.okbutton
+            else:
+                return self.chkbutton[actuel + dx]
+                
+        if sens == "right":
+            if actuel >= dx * dy - 1:
+                return self.okbutton
+            else:
+                return self.chkbutton[actuel + 1]
+                
+        if sens == "left":
+            if actuel == 0:
+                return self.okbutton
+            else:
+                return self.chkbutton[actuel - 1]
 
     def get(self):
         self.doModal()
