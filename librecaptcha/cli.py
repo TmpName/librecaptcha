@@ -15,7 +15,6 @@
 # You should have received a copy of the GNU General Public License
 # along with librecaptcha.  If not, see <http://www.gnu.org/licenses/>.
 from resources.lib.comaddon import dialog, VSlog
-from resources.lib.util import cUtil
 
 from .errors import UserError
 from .frontend import Frontend
@@ -146,16 +145,12 @@ class Cli(Frontend):
             return
         global Objectif, DimTab
         
-        VSlog(meta)
-        
         ID = json.dumps(meta).split(',')[0].replace('[','')
         f = xbmcvfs.File(STRINGS_PATH + "/data.js")
         content = f.read()
         f.close()
-        Objectif = cUtil().unescape(re.search('case '+ID+'.+?=".+?<strong>(.+?)</strong>', content).group(1))
-        VSlog(json.dumps(meta).split(','))
+        Objectif = re.search('case '+ID+'.+?=".+?<strong>(.+?)</strong>', content).group(1).encode('utf-8').decode('unicode-escape')
         DimTab = [int(json.dumps(meta).split(',')[3]),int(json.dumps(meta).split(',')[4])]
-
 
     def handle_challenge(self, ctype, **kwargs):
         if not self._first:
