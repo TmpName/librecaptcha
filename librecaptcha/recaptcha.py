@@ -253,6 +253,7 @@ class MultiCaptchaSolver(Solver, HasGrid):
 
     def select_indices(self, indices):
         self.selection_groups.append(list(sorted(indices)))
+        VSlog("Reste a faire :" + str(len(self.metas)))
         if self.metas:
             self.replace_image()
             return
@@ -424,7 +425,7 @@ class ReCaptcha:
         text = self.get("anchor", params={"co": self.co}).text
         parser = Parser()
         parser.feed(text)
-        VSlog(text)
+        #VSlog(text)
 
         if not parser.token:
             raise RuntimeError(
@@ -435,6 +436,7 @@ class ReCaptcha:
         self.current_token = self.first_token
 
     def verify(self, response):
+        VSlog("reponse :" + str(response))
         response_text = json.dumps({"response": response}, separators=",:")
         response_b64 = rc_base64(response_text)
 
@@ -466,6 +468,8 @@ class ReCaptcha:
         challenge_type = rresp[5]
         pmeta = rresp[4]
         self.current_token = rresp[1]
+        
+        VSlog("Captcha type :" + str(challenge_type) )
 
         solver_class = {
             "dynamic": DynamicSolver,
